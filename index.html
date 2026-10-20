@@ -111,6 +111,20 @@ svg text{fill:var(--muted);font-size:11px}
 .kill{display:inline-block;margin-left:6px;padding:0 6px;border-radius:999px;background:#ff5a4f;color:#1a0503;font-size:10.5px;font-weight:800;vertical-align:1px}
 .pcard.empty{opacity:.6}
 @media (max-width:480px){.prog{grid-template-columns:minmax(0,1fr)}.lvls button{padding:6px 10px}.views button{flex:1}}
+.bstat .rows{display:grid;gap:8px}
+.brow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;align-items:center;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.brow .nm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0;font-weight:700;font-size:14px}
+.brow .nm .lv{color:var(--muted);font-weight:600;font-size:12px}
+.brow .pct{grid-column:2;grid-row:1;font-size:22px;font-weight:800;color:var(--accent2);text-align:right;line-height:1.1;font-variant-numeric:tabular-nums}
+.brow .pct.killed{color:#3ddc84;font-size:16px}
+.brow .hp{grid-column:1/-1;display:flex;justify-content:flex-end;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brow .hp b{color:var(--text);font-weight:600}
+.brow .btrack{grid-column:1/-1;height:8px;border-radius:5px;background:#2a303c;overflow:hidden}
+.brow .bfill{height:100%;border-radius:5px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.brow.dead{opacity:.75}.brow.dead .bfill{background:#3ddc84}
+@media (min-width:760px){.brow{grid-template-columns:minmax(0,1fr) minmax(220px,300px) 70px;grid-template-rows:auto auto}
+ .brow .nm{grid-row:1/3}.brow .hp{grid-column:2;grid-row:1}.brow .btrack{grid-column:2;grid-row:2}.brow .pct{grid-column:3;grid-row:1/3}}
+@media (max-width:480px){.brow{padding:8px 10px}.brow .pct{font-size:19px}.brow .hp{font-size:11px}}
 footer{color:var(--muted);font-size:12px;margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
 .unavail{padding:30px;text-align:center;color:var(--muted)}
 @media (max-width:900px){.grid{grid-template-columns:minmax(0,1fr)}.tablewrap{max-height:70vh}.cards{grid-template-columns:repeat(2,1fr)}.cards .card:last-child{grid-column:span 2}}
@@ -328,6 +342,64 @@ function copyHitsLeft(s){
   if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(txt).then(ok,fallback);else fallback();
 }
 
+// ---- Boss status (like Blablalink's raid status screen) ----
+// Hard Mode max HP per boss level. Bosses 1, 2, 4 = Lord class, 3 and 5 = Tyrant class; HP is the same
+// every season. Levels 1-2 are re-derived below from killed levels (sum of damage on a killed level =
+// its max HP) and match these exactly in S42-S45. Level 3 values match Blablalink's status screen.
+// Level 4 = boss 5 only, effectively unkillable.
+const HARD_HP={lord:{1:99856279200,2:149784418800,3:292445295750},tyrant:{1:150841813600,2:226262720400,3:349230901500,4:6984618030000}};
+const HP_FINAL_LEVEL=step=>step===5?4:3;
+const hpClass=step=>(step===3||step===5)?"tyrant":"lord";
+const derivedHP={}; // "step|level" -> HP from killed levels (archived seasons, plus live when present)
+function learnHP(prog){if(!prog)return;const g={};prog.forEach(h=>{const k=h.step+"|"+h.level;const x=g[k]||(g[k]={d:0,kill:false});x.d+=h.damage;x.kill=x.kill||h.kill});
+  for(const k in g)if(g[k].kill&&!derivedHP[k])derivedHP[k]=g[k].d}
+archived.forEach(a=>learnHP(a.prog));
+const maxHP=(step,level)=>derivedHP[step+"|"+level]||(HARD_HP[hpClass(step)]||{})[level]||0;
+function bossStatus(s){
+  let rows=[];
+  if(s.prog&&s.prog.length){
+    learnHP(s.prog);
+    const bosses={};s.prog.forEach(h=>{const b=bosses[h.boss]||(bosses[h.boss]={name:h.boss,step:h.step,element:h.element,lv:{}});
+      const L=b.lv[h.level]||(b.lv[h.level]={d:0,kill:false});L.d+=h.damage;L.kill=L.kill||h.kill});
+    const list=Object.values(bosses).sort((a,b)=>a.step-b.step);
+    const top=b=>Math.max(...Object.keys(b.lv).map(Number));
+    rows=list.map(b=>{let level=top(b);let L=b.lv[level];
+      // the next level opens once every boss is dead on this level
+      if(L.kill&&level<HP_FINAL_LEVEL(b.step)&&list.every(x=>x.lv[level]&&x.lv[level].kill)){level++;L=b.lv[level]||{d:0,kill:false}}
+      return {name:b.name,step:b.step,element:b.element,level,dealt:L.d,killed:L.kill,est:false}});
+  } else if(s.bosses&&s.bosses.length){
+    // older live feed: only per-boss totals. Damage on the current level = total - HP of the (killed) lower levels.
+    rows=s.bosses.map(b=>{const level=b.lap||1;let lower=0,ok=true;for(let l=1;l<level;l++){const hp=maxHP(b.step,l);if(!hp)ok=false;lower+=hp}
+      return {name:b.name,step:b.step,element:b.element,level,dealt:ok?Math.max(0,b.damage-lower):b.damage,killed:b.kills>=level,est:true,lowerUnknown:!ok}}).sort((a,b)=>a.step-b.step);
+  }
+  rows.forEach(r=>{r.hp=r.lowerUnknown?0:maxHP(r.step,r.level);r.pct=r.hp?Math.min(100,r.dealt/r.hp*100):null;if(r.killed)r.pct=100});
+  return rows;
+}
+const pctTxt=p=>Math.floor(p)+"%";
+function statusPanel(s){
+  const rows=bossStatus(s);
+  const title=s.live?"Current status":"Final status";
+  if(!rows.length)return `<div class="panel bstat"><h2>Boss status · ${esc(s.label)} Hard <small>${title}</small></h2><div class="note">No Hard Mode hits yet.</div></div>`;
+  const row=r=>{const col=ecol(r.element);const pill=r.element?`<span class="pill" style="background:${col}">${esc(r.element)}</span>`:"";
+    const hpTxt=r.hp?`<b>${full(r.dealt)}</b>&nbsp;/&nbsp;${full(r.hp)}`:`<b>${full(r.dealt)}</b> dealt · max HP unknown`;
+    const pc=r.killed?`<div class="pct killed">☠ Killed</div>`:`<div class="pct">${r.pct!=null?pctTxt(r.pct):"—"}</div>`;
+    return `<div class="brow${r.killed?" dead":""}" title="${esc(r.name)} · Level ${r.level}${r.hp?" · "+(r.dealt/r.hp*100).toFixed(2)+"%":""}"><div class="nm">${esc(r.name)} ${pill}<span class="lv">Level ${r.level}</span></div>
+      <div class="hp">${hpTxt}</div><div class="btrack">${r.pct!=null?`<div class="bfill" style="width:${r.pct.toFixed(2)}%"></div>`:""}</div>${pc}</div>`};
+  const est=rows.some(r=>r.est);
+  const note=`${s.live?"Damage on each boss's current level, updated every minute. ":"Where each boss stood when the season ended. "}Max HP is the same every season for each boss slot and level (bosses 3 and 5 have more HP).${est?" Estimated from boss totals until the tracker script update.":""}`;
+  return `<div class="panel bstat" style="margin-bottom:14px"><h2><span>Boss status · ${esc(s.label)} Hard <small>${title}</small></span><button class="btn" id="bsCopy" title="Copy a short status for chat">Copy status</button></h2>
+    <div class="rows">${rows.map(row).join("")}</div><div class="note">${note}</div></div>`;
+}
+function copyStatus(s){
+  const rows=bossStatus(s);
+  const txt=`${s.label} Hard ${s.live?"status":"final status"}: `+rows.map(r=>`${r.name} L${r.level} ${r.killed?"☠ Killed":(r.pct!=null?pctTxt(r.pct):fmt(r.dealt)+" dmg")}`).join(" · ");
+  const ok=()=>{const b=$("#bsCopy");if(b){b.textContent="Copied!";setTimeout(()=>{const c=$("#bsCopy");if(c)c.textContent="Copy status"},1500)}};
+  const fallback=()=>{const ta=document.createElement("textarea");ta.value=txt;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();try{document.execCommand("copy");ok()}catch(e){}ta.remove()};
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(txt).then(ok,fallback);else fallback();
+  return txt;
+}
+window.__statusText=()=>{const s=byId(cur);return s?bossStatus(s).map(r=>`${r.name} L${r.level} ${r.killed?"Killed":r.pct!=null?pctTxt(r.pct):"?"}`).join(" · "):""};
+
 // ---- Progress tab: hits sent into each boss, per boss level ----
 let view=/progress/i.test(location.hash)?"progress":"results";
 const progLevel={},progPicked={}; // season id -> selected level / user picked it
@@ -385,7 +457,8 @@ function render(){
   const s=byId(cur);
   if(!s||!s.available){$("#main").innerHTML=`<div class="panel unavail">Season ${esc(cur)} is unavailable${s&&s.note?": "+esc(s.note):""}.</div>`;}
   else{
-    if(view==="progress"){$("#main").innerHTML=progressView(s);
+    if(view==="progress"){$("#main").innerHTML=statusPanel(s)+progressView(s);
+      const bc=$("#bsCopy");if(bc)bc.onclick=()=>copyStatus(s);
       document.querySelectorAll(".lvls button").forEach(b=>b.onclick=()=>{progLevel[s.id]=+b.dataset.l;progPicked[s.id]=true;render()});}
     else{
     $("#main").innerHTML=cards(s)+`<div class="grid"><div>${leaderboard(s)}</div><div class="side" style="display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-content:start">${bossPanel(s)}${trendPanel(s)}</div></div>`+`<div style="margin-top:14px">${hitsLeftPanel(s)}</div>`;
