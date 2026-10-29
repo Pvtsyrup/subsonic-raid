@@ -639,10 +639,10 @@ function upZones(u){if(upStarted(u))return "";return `<div id="upTz" data-st="1"
   ${u.source?`<div class="up-src muted">Converted from the official UTC+9 times. <a href="${esc(u.source)}" target="_blank" rel="noopener noreferrer">Official post ↗</a></div>`:""}</div>`}
 function upHeader(u){const c=upCountdown(u);
   return `<div class="panel up-hd"><div><div class="t">Union Raid · ${MN()} Mode · Upcoming</div><h2>Season ${u.season}</h2>
-  <div class="up-dates"><span>Starts</span><b>${esc(ctTime(u.startMs))}</b><span>Ends</span><b>${esc(ctTime(u.endMs))}</b></div></div>
+  ${upStarted(u)?"":`<div class="up-dates" id="upDates"><span>Starts</span><b>${esc(ctTime(u.startMs))}</b><span>Ends</span><b>${esc(ctTime(u.endMs))}</b></div>`}</div>
   <div class="up-cd" id="upCd"><div class="big ${c.cls}">${esc(c.big)}</div><div class="s">${esc(c.sub)}</div></div>
   ${upZones(u)}</div>`;}
-function upTick(){const el=$("#upCd");const s=byId(cur);if(el&&s&&s.upcoming){const c=upCountdown(s);el.innerHTML=`<div class="big ${c.cls}">${esc(c.big)}</div><div class="s">${esc(c.sub)}</div>`}const z=$("#upTz");if(z&&s&&s.upcoming&&z.dataset.st==="1"&&upStarted(s))z.remove();
+function upTick(){const el=$("#upCd");const s=byId(cur);if(el&&s&&s.upcoming){const c=upCountdown(s);el.innerHTML=`<div class="big ${c.cls}">${esc(c.big)}</div><div class="s">${esc(c.sub)}</div>`}const z=$("#upTz");if(z&&s&&s.upcoming&&z.dataset.st==="1"&&upStarted(s))z.remove();const ud=$("#upDates");if(ud&&s&&s.upcoming&&upStarted(s))ud.remove();
   const b=document.querySelector("#seasons button.upbtn .soon");if(b){const u=upcoming.find(x=>"UP"+x.season===b.parentNode.dataset.s);if(u)b.textContent={soon:"Soon",on:"Now",ended:"Ended"}[upPhase(u)]}}
 const upMsg=u=>{const ph=upPhase(u);return ph==="ended"?`<b>Raid ended</b>Results show here once the season is archived.`:ph==="on"?`<b>Waiting for the first hits</b>Live data shows here once the tracker picks up the raid.`:`<b>Not started yet</b>Starts ${esc(ctTime(u.startMs))}.`};
 function upBossList(u){
